@@ -1,0 +1,124 @@
+from PyQt6.QtWidgets import QApplication, QWidget, QMessageBox
+from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtCore import Qt
+import cv2
+import sys
+from PyQt6 import uic
+import numpy as np
+import time
+
+with open('C:/Users/uif87690/Documents/ImageProcessing/Resources/object_detection_classes_coco.txt', 'r') as f:
+    class_names = f.read().split('\n')
+
+# get a different color array for each of the classes
+COLORS = np.random.uniform(0, 255, size=(len(class_names), 3))
+#load dnn model
+model = cv2.dnn.readNet(model='C:/Users/uif87690/Documents/ImageProcessing/Resources/frozen_inference_graph.pb',                config='C:/Users/uif87690/Documents/ImageProcessing/Resources/ssd_mobilenet_v2_coco_2018_03_29.pbtxt.txt',framework='TensorFlow')
+
+def detectImage(image):
+        start = time.time()
+        image_height, image_width, _ = image.shape
+        # create blob from image
+        blob = cv2.dnn.blobFromImage(image=image, size=(300, 300), mean=(104, 117, 123), swapRB=True)
+        # set the blob to the model
+        model.setInput(blob)
+        # forward pass through the model to carry out the detection
+        output = model.forward()
+        end = time.time()
+        fps = 1 / (end-start)
+        # loop over each of the detection
+        for detection in output[0, 0, :, :]:
+            # extract the confidence of the detection
+            confidence = detection[2]
+            # draw bounding boxes only if the detection confidence is above...
+            # ... a certain threshold, else skip
+            if confidence > .3:
+                # get the class id
+                class_id = detection[1]
+                # map the class id to the class
+                out_name = class_names[int(class_id)-1]
+                out_text = f"{out_name}, {confidence:.3f}"
+
+                color = COLORS[int(class_id)]
+                # get the bounding box coordinates
+                box_x = detection[3] * image_width
+                box_y = detection[4] * image_height
+                # get the bounding box width and height
+                box_width = detection[5] * image_width
+                box_height = detection[6] * image_height
+                # draw a rectangle around each detected object
+                cv2.rectangle(image, (int(box_x), int(box_y)), (int(box_width), int(box_height)), color, thickness=2)
+                # put the FPS text on top of the frame
+                cv2.putText(image, out_text, (int(box_x), int(box_y - 5)), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                cv2.putText(image, f"{fps:.2f} FPS", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        return image
+
+class Main(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.ui = uic.loadUi('C:/Users/uif87690/AppData/Local/Programs/Python/Python311/Lib/site-packages/qt6_applications/Qt/bin/mainImage.ui', self)
+
+        
+        self.isWebcamActive = False
+        self.detectBool = False
+
+        # Authenticate when the login button is clicked
+        self.ui.btn_start.clicked.connect(self.startVideo)
+        self.ui.btn_stop.clicked.connect(self.stopVideo)
+        self.ui.btn_detect.clicked.connect(self.detect)
+        self.show()
+
+    def startVideo(self):
+        
+        cap = cv2.VideoCapture('C:/Users/uif87690/opencvVSCode/PyQt6/input/video_1.mp4')
+
+
+        self.isWebcamActive = True
+        
+        # Check if the video capture is opened successfully
+        if not cap.isOpened():
+            QMessageBox.critical(self, "Error", "Failed to open the video capture.")
+            return
+
+        while self.isWebcamActive:
+            ret, frame = cap.read()
+            if ret:
+                # Convert the frame to RGB format
+                if self.detectBool:
+                    frame = detectImage(frame)
+
+
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                # Create QImage from the RGB frame data
+                height, width, channel = frame.shape
+                image = QImage(frame_rgb, width, height, QImage.Format.Format_RGB888)
+
+                # Create QPixmap from the QImage
+                pixmap = QPixmap.fromImage(image)
+
+                # Scale the pixmap to fit the label size
+                scaled_pixmap = pixmap.scaled(self.ui.image_label.size(), Qt.AspectRatioMode.KeepAspectRatio)
+
+                # Set the scaled pixmap as the label's pixmap
+                self.ui.image_label.setPixmap(scaled_pixmap)
+
+                # Update the UI
+                QApplication.processEvents()
+            else:
+                break
+
+        # Release the video capture
+        cap.release()
+    def stopVideo(self):
+        self.isWebcamActive = False
+    def detect(self):
+        self.detectBool = True
+        
+    
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    login_window = Main()
+    sys.exit(app.exec())
